@@ -1,5 +1,15 @@
 # Discord Guessing Game Bot
 
+## Table of Contents
+- [Purpose](#purpose)
+- [Features](#features)
+- [Commands](#commands)
+  - [User Commands](#user-commands)
+  - [Administrator Commands](#administrator-commands)
+- [Setup](#setup)
+- [How It Works](#how-it-works)
+- [Use Cases](#use-cases)
+
 ## Purpose
 This Discord bot facilitates number guessing games for special events, contests, or community activities. Users can submit private guesses, and administrators can manage the game and determine winners. Perfect for any scenario where you need people to guess a number - from "how many jelly beans in a jar" to "guess the final score" or "how many attendees at the event."
 
@@ -15,6 +25,7 @@ This Discord bot facilitates number guessing games for special events, contests,
 ### User Commands
 - `/guess` - Start a private thread to submit your guess. The bot will ask you to enter a number.
 - `/show_question` - Display the current question being asked.
+- `/guesshelp` - Show available commands (shows admin commands only if you're an administrator).
 
 ### Administrator Commands
 - `/set_question <question>` - Set a custom question for the guessing game.

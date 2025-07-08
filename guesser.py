@@ -34,9 +34,55 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
+# Remove the default help command to create our custom one
+bot.remove_command('help')
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+
+@bot.command()
+async def guesshelp(ctx):
+    """Shows available commands based on user permissions"""
+    embed = discord.Embed(
+        title="🎯 Guessing Game Bot Commands",
+        color=discord.Color.blue()
+    )
+    
+    # User commands (everyone can see these)
+    embed.add_field(
+        name="📝 User Commands",
+        value=(
+            "**/guess** - Start a private thread to submit your guess\n"
+            "**/show_question** - Display the current question\n"
+            "**/guesshelp** - Show this help message"
+        ),
+        inline=False
+    )
+    
+    # Check if user is an admin
+    if ctx.author.guild_permissions.administrator:
+        embed.add_field(
+            name="🛠️ Administrator Commands",
+            value=(
+                "**/set_question <question>** - Set a new question for the game\n"
+                "**/list_guesses** - Show all submitted guesses\n"
+                "**/find_closest <answer>** - Find the closest guess to the answer"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📌 Admin Examples",
+            value=(
+                "`/set_question How many jelly beans are in the jar?`\n"
+                "`/find_closest 150` - If the answer is 150"
+            ),
+            inline=False
+        )
+    
+    embed.set_footer(text="Only admins can see admin commands")
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def guess(ctx):
