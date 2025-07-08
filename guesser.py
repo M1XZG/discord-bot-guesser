@@ -123,10 +123,16 @@ async def guess(ctx):
         await asyncio.sleep(5)
         await thread.delete()
         
+        # Delete the original /guess command message
+        await ctx.message.delete()
+        
     except asyncio.TimeoutError:
         await thread.send("⏰ Time's up! Please use `/guess` again if you want to make a guess.")
         await asyncio.sleep(3)
         await thread.delete()
+        
+        # Delete the original /guess command message even on timeout
+        await ctx.message.delete()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
