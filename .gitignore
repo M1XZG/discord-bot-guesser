@@ -6,4 +6,4 @@ discord.log
 venv
 __pycache__
 *.db
-my*.json
+my_*.json
