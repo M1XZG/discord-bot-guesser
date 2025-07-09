@@ -134,16 +134,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
-@bot.event
-async def on_ready():
-    logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
-    try:
-        synced = await bot.tree.sync()
-        logger.info(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        logger.error(f"Failed to sync commands: {e}")
-
-# Update the guesshelp command to include the new commands
 @bot.tree.command(name="guesshelp", description="Show available commands")
 async def guesshelp(interaction: discord.Interaction):
     """Shows available commands based on user permissions"""
@@ -159,7 +149,8 @@ async def guesshelp(interaction: discord.Interaction):
             "**/guess** - Start a private thread to submit your guess\n"
             "**/show_question** - Display the current question\n"
             "**/guessing_status** - Check if guessing is open or closed\n"
-            "**/guesshelp** - Show this help message"
+            "**/guesshelp** - Show this help message\n"
+            "**/botinfo** - Show info about this bot"
         ),
         inline=False
     )
@@ -190,6 +181,167 @@ async def guesshelp(interaction: discord.Interaction):
     
     embed.set_footer(text="Only admins can see admin commands")
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="botinfo", description="Show info about this bot")
+async def botinfo(interaction: discord.Interaction):
+    """Shows information about the bot"""
+    import sys
+    import subprocess
+    
+    # Try to get the current git branch
+    branch = "unknown"
+    commit_hash = "unknown"
+    commit_date = "unknown"
+    
+    try:
+        # Get current branch
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode("utf-8").strip()
+        
+        # Get current commit hash (short)
+        commit_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+        
+        # Get commit date
+        commit_date = subprocess.check_output(["git", "log", "-1", "--format=%cd", "--date=short"]).decode("utf-8").strip()
+    except Exception:
+        pass
+
+    # Git info formatting
+    git_info = f"**Branch:** `{branch}`\n**Commit:** `{commit_hash}` ({commit_date})"
+
+    # Count lines of code in this file
+    total_lines = 0
+    try:
+        with open(__file__, "r", encoding="utf-8") as f:
+            total_lines = sum(1 for _ in f)
+    except Exception:
+        pass
+
+    # Get bot uptime
+    uptime_str = "Unknown"
+    if hasattr(bot, 'start_time'):
+        uptime = datetime.now() - bot.start_time
+        days = uptime.days
+        hours = uptime.seconds // 3600
+        minutes = (uptime.seconds % 3600) // 60
+        if days > 0:
+            uptime_str = f"{days}d {hours}h {minutes}m"
+        elif hours > 0:
+            uptime_str = f"{hours}h {minutes}m"
+        else:
+            uptime_str = f"{minutes}m"
+    
+    # Server count
+    server_count = len(bot.guilds)
+    total_users = sum(guild.member_count for guild in bot.guilds)
+    
+    # Database stats
+    c.execute('SELECT COUNT(*) FROM guesses')
+    total_guesses = c.fetchone()[0]
+    c.execute('SELECT COUNT(DISTINCT guild_id) FROM guesses')
+    servers_with_guesses = c.fetchone()[0]
+    
+    # Create embed for better formatting
+    embed = discord.Embed(
+        title="Discord Guessing Game Bot 🎯",
+        description="A fun guessing game for your Discord server!",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(
+        name="📊 Bot Statistics",
+        value=f"Servers: **{server_count}**\nUsers: **{total_users:,}**\nUptime: **{uptime_str}**",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🎮 Game Statistics",
+        value=f"Total Guesses: **{total_guesses}**\nActive Servers: **{servers_with_guesses}**",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🔧 Version Info",
+        value=f"Branch: **{branch}**\nCommit: **{commit_hash}**\nPython: **{sys.version.split()[0]}**",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="📝 Code Stats",
+        value=f"Lines: **{total_lines}**\nFile: **guesser.py**",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="🔗 Links",
+        value="[GitHub Repository](https://github.com/M1XZG/discord-bot-guesser)",
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Last commit: {commit_date}")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.event
+async def on_ready():
+    # Store bot start time for uptime calculation
+    if not hasattr(bot, 'start_time'):
+        bot.start_time = datetime.now()
+    
+    logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+# Remove this duplicate guesshelp command definition
+# @bot.tree.command(name="guesshelp", description="Show available commands")
+# async def guesshelp(interaction: discord.Interaction):
+#     """Shows available commands based on user permissions"""
+#     embed = discord.Embed(
+#         title="🎯 Guessing Game Bot Commands",
+#         color=discord.Color.blue()
+#     )
+#     
+#     # User commands (everyone can see these)
+#     embed.add_field(
+#         name="📝 User Commands",
+#         value=(
+#             "**/guess** - Start a private thread to submit your guess\n"
+#             "**/show_question** - Display the current question\n"
+#             "**/guessing_status** - Check if guessing is open or closed\n"
+#             "**/guesshelp** - Show this help message\n"
+#             "**/botinfo** - Show info about this bot"
+#         ),
+#         inline=False
+#     )
+#     
+#     # Check if user is an admin
+#     if interaction.user.guild_permissions.administrator:
+#         embed.add_field(
+#             name="🛠️ Administrator Commands",
+#             value=(
+#                 "**/open_guessing** - Open the guessing event\n"
+#                 "**/close_guessing** - Close the guessing event\n"
+#                 "**/set_question <question>** - Set a new question for the game\n"
+#                 "**/list_guesses** - Show all submitted guesses\n"
+#                 "**/find_closest <answer>** - Find the closest guess to the answer\n"
+#                 "**/reset_game** - Clear all guesses and reset the game"
+#             ),
+#             inline=False
+#         )
+#         
+#         embed.add_field(
+#             name="📌 Admin Examples",
+#             value=(
+#                 "`/set_question How many jelly beans are in the jar?`\n"
+#                 "`/find_closest 150` - If the answer is 150"
+#             ),
+#             inline=False
+#         )
+#     
+#     embed.set_footer(text="Only admins can see admin commands")
+#     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="guess", description="Submit your private guess")
 async def guess(interaction: discord.Interaction):
