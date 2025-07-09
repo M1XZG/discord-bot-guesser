@@ -357,9 +357,16 @@ async def find_closest(interaction: discord.Interaction, answer: str):
         await interaction.response.send_message("You need administrator permissions to use this command.", ephemeral=True)
         return
     
+    guild_id = interaction.guild_id
+    
     # Check if the question is numeric
-    c.execute('SELECT is_numeric FROM question WHERE id = 1')
-    is_numeric = c.fetchone()[0]
+    c.execute('SELECT is_numeric FROM question WHERE guild_id = ?', (guild_id,))
+    result = c.fetchone()
+    if not result:
+        await interaction.response.send_message("No question has been set for this server yet.", ephemeral=True)
+        return
+    
+    is_numeric = result[0]
     
     if is_numeric:
         # Try to convert answer to int for numeric comparison
@@ -369,77 +376,113 @@ async def find_closest(interaction: discord.Interaction, answer: str):
             await interaction.response.send_message("The current question expects numeric answers. Please provide a number.", ephemeral=True)
             return
         
-        logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) finding closest guess to answer: {answer_num}')
-        c.execute('SELECT username, guess FROM guesses')
+        logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) finding closest guesses to answer: {answer_num} in guild {guild_id}')
+        c.execute('SELECT username, guess FROM guesses WHERE guild_id = ?', (guild_id,))
         rows = c.fetchall()
         
         if not rows:
             await interaction.response.send_message('No guesses have been made yet.')
             return
         
-        # Find the closest numeric guess
-        closest_user = None
-        closest_guess = None
-        min_difference = float('inf')
-        
+        # Calculate differences for all valid numeric guesses
+        valid_guesses = []
         for username, guess in rows:
             try:
                 guess_num = int(guess)
                 difference = abs(guess_num - answer_num)
-                if difference < min_difference:
-                    min_difference = difference
-                    closest_user = username
-                    closest_guess = guess_num
+                valid_guesses.append((username, guess_num, difference))
             except ValueError:
                 continue  # Skip non-numeric guesses
         
-        if closest_user:
-            logger.info(f'Closest guess to {answer_num} was {closest_guess} by {closest_user} (difference: {min_difference})')
-            
-            embed = discord.Embed(
-                title="🎯 Winner Found!",
-                color=discord.Color.gold(),
-                description=f"The actual answer was **{answer_num}**"
-            )
-            embed.add_field(name="Winner", value=closest_user, inline=True)
-            embed.add_field(name="Their Guess", value=closest_guess, inline=True)
-            embed.add_field(name="Difference", value=f"{min_difference}", inline=True)
-            
-            await interaction.response.send_message(embed=embed)
-        else:
+        if not valid_guesses:
             await interaction.response.send_message('No valid numeric guesses found.')
-    else:
-        # For text-based questions, just show who guessed the exact answer
-        logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) checking for exact match: "{answer}"')
-        c.execute('SELECT username, guess FROM guesses WHERE LOWER(guess) = LOWER(?)', (answer,))
-        matches = c.fetchall()
+            return
         
-        if matches:
+        # Sort by difference and get top 5
+        valid_guesses.sort(key=lambda x: x[2])
+        top_5 = valid_guesses[:5]
+        
+        logger.info(f'Top 5 guesses to {answer_num}: {[(u, g, d) for u, g, d in top_5]}')
+        
+        embed = discord.Embed(
+            title="🎯 Top 5 Closest Guesses!",
+            color=discord.Color.gold(),
+            description=f"The actual answer was **{answer_num}**"
+        )
+        
+        # Medal/rank emojis for top 5
+        rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+        
+        for i, (username, guess, difference) in enumerate(top_5):
+            embed.add_field(
+                name=f"{rank_emojis[i]} #{i+1} Place",
+                value=f"**{username}**\nGuess: {guess}\nDifference: {difference}",
+                inline=True
+            )
+        
+        # Add empty field for better formatting if needed
+        if len(top_5) % 3 == 2:
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
+        
+        # Add a note if there are ties
+        if len(valid_guesses) > 5:
+            tied_with_fifth = [g for g in valid_guesses[5:] if g[2] == top_5[4][2]]
+            if tied_with_fifth:
+                tied_names = [g[0] for g in tied_with_fifth]
+                embed.add_field(
+                    name="📌 Note",
+                    value=f"Also tied for 5th place: {', '.join(tied_names[:5])}{'...' if len(tied_names) > 5 else ''}",
+                    inline=False
+                )
+        
+        await interaction.response.send_message(embed=embed)
+    else:
+        # For text-based questions, show exact matches and closest matches
+        logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) checking for matches: "{answer}" in guild {guild_id}')
+        
+        # First check for exact matches
+        c.execute('SELECT username, guess FROM guesses WHERE guild_id = ? AND LOWER(guess) = LOWER(?)', (guild_id, answer))
+        exact_matches = c.fetchall()
+        
+        if exact_matches:
             embed = discord.Embed(
                 title="🎯 Exact Matches Found!",
                 color=discord.Color.gold(),
                 description=f"The answer was: **{answer}**"
             )
-            winners = '\n'.join([f"• {username}" for username, _ in matches])
-            embed.add_field(name="Users who got it right:", value=winners, inline=False)
-            await interaction.response.send_message(embed=embed)
-        else:
-            # Show all answers for manual review
-            c.execute('SELECT username, guess FROM guesses')
-            rows = c.fetchall()
-            if rows:
-                embed = discord.Embed(
-                    title="📝 All Answers",
-                    color=discord.Color.blue(),
-                    description=f"The answer was: **{answer}**\n\nNo exact matches found. Here are all responses:"
+            
+            # Show up to first 10 exact matches
+            winners = '\n'.join([f"• {username}" for username, _ in exact_matches[:10]])
+            embed.add_field(
+                name=f"Users who got it exactly right ({len(exact_matches)} total):",
+                value=winners,
+                inline=False
+            )
+            
+            if len(exact_matches) > 10:
+                embed.add_field(
+                    name="Note",
+                    value=f"Showing first 10 of {len(exact_matches)} exact matches",
+                    inline=False
                 )
-                answers_list = '\n'.join([f'**{username}**: {guess}' for username, guess in rows[:20]])  # Limit to 20
-                embed.add_field(name="Responses", value=answers_list, inline=False)
-                if len(rows) > 20:
-                    embed.add_field(name="Note", value=f"Showing first 20 of {len(rows)} responses", inline=False)
-                await interaction.response.send_message(embed=embed)
-            else:
-                await interaction.response.send_message('No guesses have been made yet.')
+        else:
+            embed = discord.Embed(
+                title="📝 No Exact Matches",
+                color=discord.Color.blue(),
+                description=f"The answer was: **{answer}**"
+            )
+        
+        # Show all answers for manual review
+        c.execute('SELECT username, guess FROM guesses WHERE guild_id = ?', (guild_id,))
+        all_rows = c.fetchall()
+        
+        if all_rows and not exact_matches:
+            answers_list = '\n'.join([f'**{username}**: {guess}' for username, guess in all_rows[:20]])
+            embed.add_field(name="All Responses", value=answers_list, inline=False)
+            if len(all_rows) > 20:
+                embed.add_field(name="Note", value=f"Showing first 20 of {len(all_rows)} responses", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="open_guessing", description="Open the guessing event (Admin only)")
 async def open_guessing(interaction: discord.Interaction):
