@@ -28,6 +28,8 @@ This Discord bot facilitates guessing games for special events, contests, or com
 - Thread-based private submissions that auto-delete for privacy
 - Safe game reset with double confirmation
 - Starts with no question set - admins must configure before use
+- Multi-server support - each Discord server has its own independent game
+- Top 5 closest guesses display for easy winner selection
 
 ## Commands
 
@@ -36,6 +38,7 @@ This Discord bot facilitates guessing games for special events, contests, or com
 - `/show_question` - Display the current question being asked.
 - `/guessing_status` - Check if guessing is currently open or closed and what type of answer is expected.
 - `/guesshelp` - Show available commands (shows admin commands only if you're an administrator).
+- `/botinfo` - Show bot statistics, version info, and game statistics.
 
 ### Administrator Commands
 - `/set_question <question> [numeric_only]` - Set a custom question for the guessing game.
@@ -46,11 +49,13 @@ This Discord bot facilitates guessing games for special events, contests, or com
 - `/open_guessing` - Open the guessing event and allow users to submit guesses (requires a question to be set first).
 - `/close_guessing` - Close the guessing event and prevent new submissions (shows total number of guesses).
 - `/list_guesses` - Show all users who have submitted guesses and their answers.
-- `/find_closest <answer>` - Find winners based on the answer:
-  - For numeric questions: Finds the closest guess to the number
-  - For text questions: Shows exact matches or all answers for review
-  - Example: `/find_closest 150` (for numeric questions)
-  - Example: `/find_closest Brazil` (for text questions)
+- `/find_closest <answer>` - Find the top 5 closest guesses to help select winners:
+  - For numeric questions: Shows the 5 closest guesses with medals/rankings (🥇🥈🥉4️⃣5️⃣)
+  - Displays username, guess, and difference from the actual answer
+  - Automatically detects and shows ties for 5th place
+  - For text questions: Shows exact matches or all answers for manual review
+  - Example: `/find_closest 150` (shows top 5 closest to 150)
+  - Example: `/find_closest Brazil` (shows who guessed "Brazil" exactly)
 - `/reset_game` - Clear all guesses and reset the game:
   - Can only be used when guessing is closed
   - Opens a private thread for confirmation
@@ -74,7 +79,7 @@ This Discord bot facilitates guessing games for special events, contests, or com
 5. In the private thread, users enter their answer (number or text based on question type)
 6. The thread is automatically deleted after submission for privacy
 7. When ready, administrators close guessing with `/close_guessing`
-8. Administrators use `/find_closest` with the actual answer to determine winners
+8. Administrators use `/find_closest` with the actual answer to see the top 5 winners
 9. Optionally, administrators can `/reset_game` to clear all data and start fresh
 
 ## Use Cases
@@ -91,7 +96,7 @@ This Discord bot facilitates guessing games for special events, contests, or com
   - Creative contests (best name suggestions)
 
 ## Technical Details
-- **Database**: SQLite with automatic schema migration
+- **Database**: SQLite with automatic schema migration and multi-server support
 - **Privacy**: Uses Discord private threads that auto-delete after submission
 - **Logging**: All bot activity logged to `discord.log` file with session separators
 - **Commands**: Uses Discord slash commands with autocomplete
@@ -99,6 +104,8 @@ This Discord bot facilitates guessing games for special events, contests, or com
 - **Answer Types**: Dynamically switches between numeric and text validation
 - **Data Safety**: Reset command requires double confirmation to prevent accidental deletion
 - **Initial State**: Bot starts with no question set and guessing closed
+- **Multi-Server**: Each Discord server has completely independent games and data
+- **Winner Selection**: Shows top 5 closest guesses with visual rankings for easy winner selection
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
