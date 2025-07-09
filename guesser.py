@@ -409,7 +409,7 @@ async def guess(interaction: discord.Interaction):
             return len(m.content.strip()) > 0  # Any non-empty text is valid
     
     try:
-        msg = await bot.wait_for('message', timeout=60.0, check=check)
+        msg = await bot.wait_for('message', timeout=120.0, check=check)
         
         if is_numeric:
             guess_value = int(msg.content)
