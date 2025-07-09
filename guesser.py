@@ -676,12 +676,13 @@ async def close_guessing(interaction: discord.Interaction):
         await interaction.response.send_message("You need administrator permissions to use this command.", ephemeral=True)
         return
     
-    logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) closed guessing')
-    c.execute('UPDATE question SET is_open = 0 WHERE id = 1')
+    guild_id = interaction.guild_id
+    logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) closed guessing in guild {guild_id}')
+    c.execute('UPDATE question SET is_open = 0 WHERE guild_id = ?', (guild_id,))
     conn.commit()
     
-    # Get total number of guesses
-    c.execute('SELECT COUNT(*) FROM guesses')
+    # Get total number of guesses for this guild
+    c.execute('SELECT COUNT(*) FROM guesses WHERE guild_id = ?', (guild_id,))
     total_guesses = c.fetchone()[0]
     
     embed = discord.Embed(
@@ -693,8 +694,19 @@ async def close_guessing(interaction: discord.Interaction):
 
 @bot.tree.command(name="guessing_status", description="Check if guessing is open or closed")
 async def guessing_status(interaction: discord.Interaction):
-    c.execute('SELECT is_open, question_text, is_numeric FROM question WHERE id = 1')
+    guild_id = interaction.guild_id
+    c.execute('SELECT is_open, question_text, is_numeric FROM question WHERE guild_id = ?', (guild_id,))
     result = c.fetchone()
+    
+    if not result:
+        embed = discord.Embed(
+            title="❌ No Game Set Up",
+            description="No question has been set yet. An admin needs to use `/set_question` first.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
     is_open = result[0]
     question = result[1]
     is_numeric = result[2]
@@ -729,11 +741,21 @@ async def reset_game(interaction: discord.Interaction):
         await interaction.response.send_message("You need administrator permissions to use this command.", ephemeral=True)
         return
     
-    logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) initiated reset_game command')
+    guild_id = interaction.guild_id
+    logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) initiated reset_game command in guild {guild_id}')
     
     # Check if guessing is still open
-    c.execute('SELECT is_open FROM question WHERE id = 1')
-    is_open = c.fetchone()[0]
+    c.execute('SELECT is_open FROM question WHERE guild_id = ?', (guild_id,))
+    result = c.fetchone()
+    
+    if not result:
+        await interaction.response.send_message(
+            "❌ No game has been set up for this server yet.", 
+            ephemeral=True
+        )
+        return
+    
+    is_open = result[0]
     
     if is_open:
         await interaction.response.send_message(
@@ -741,14 +763,15 @@ async def reset_game(interaction: discord.Interaction):
             "Please use `/close_guessing` first before resetting the game.", 
             ephemeral=True
         )
-        logger.info(f'Admin {interaction.user} tried to reset but guessing is still open')
+        logger.info(f'Admin {interaction.user} tried to reset but guessing is still open in guild {guild_id}')
         return
     
     # Get current stats before reset
-    c.execute('SELECT COUNT(*) FROM guesses')
+    c.execute('SELECT COUNT(*) FROM guesses WHERE guild_id = ?', (guild_id,))
     total_guesses = c.fetchone()[0]
-    c.execute('SELECT question_text FROM question WHERE id = 1')
-    current_question = c.fetchone()[0]
+    c.execute('SELECT question_text FROM question WHERE guild_id = ?', (guild_id,))
+    result = c.fetchone()
+    current_question = result[0] if result else "No question set"
     
     # Defer the response to avoid timeout
     await interaction.response.defer(ephemeral=True)
@@ -767,7 +790,7 @@ async def reset_game(interaction: discord.Interaction):
     # Send initial warning
     embed = discord.Embed(
         title="⚠️ RESET GAME - CONFIRMATION REQUIRED",
-        description="This action will permanently delete all data!",
+        description="This action will permanently delete all data for this server!",
         color=discord.Color.red()
     )
     embed.add_field(name="Current Question", value=current_question, inline=False)
@@ -815,19 +838,19 @@ async def reset_game(interaction: discord.Interaction):
         await bot.wait_for('message', timeout=30.0, check=check_confirm)
         
         # Perform the reset
-        logger.info(f'Admin {interaction.user} confirmed game reset. Deleting {total_guesses} guesses.')
+        logger.info(f'Admin {interaction.user} confirmed game reset. Deleting {total_guesses} guesses in guild {guild_id}.')
         
-        # Clear all guesses
-        c.execute('DELETE FROM guesses')
+        # Clear all guesses for this guild
+        c.execute('DELETE FROM guesses WHERE guild_id = ?', (guild_id,))
         
-        # Clear the question and ensure guessing is closed
+        # Clear the question and ensure guessing is closed for this guild
         c.execute('''
             UPDATE question 
             SET question_text = '',
                 is_open = 0,
                 is_numeric = 1
-            WHERE id = 1
-        ''')
+            WHERE guild_id = ?
+        ''', (guild_id,))
         
         conn.commit()
         
@@ -842,14 +865,14 @@ async def reset_game(interaction: discord.Interaction):
         success_embed.add_field(name="Status", value="Closed", inline=True)
         
         await thread.send(embed=success_embed)
-        logger.info(f'Game reset completed. {total_guesses} guesses deleted. Question cleared.')
+        logger.info(f'Game reset completed in guild {guild_id}. {total_guesses} guesses deleted. Question cleared.')
         
         # Delete thread after a delay
         await asyncio.sleep(10)
         await thread.delete()
         
     except asyncio.TimeoutError:
-        logger.warning(f'Reset timeout for admin {interaction.user} (ID: {interaction.user.id})')
+        logger.warning(f'Reset timeout for admin {interaction.user} (ID: {interaction.user.id}) in guild {guild_id}')
         await thread.send("❌ Reset cancelled due to timeout. No data was deleted.")
         await asyncio.sleep(5)
         await thread.delete()
