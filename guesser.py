@@ -418,11 +418,20 @@ async def guess(interaction: discord.Interaction):
         
         # Save the guess with guild_id
         user_id = interaction.user.id
-        username = str(interaction.user)
+        
+        # Get server nickname if available, otherwise use global username
+        member = interaction.guild.get_member(user_id)
+        if member and member.nick:
+            display_name = member.nick
+            logger.info(f'Using server nickname: {display_name} for user {interaction.user}')
+        else:
+            display_name = interaction.user.name
+            logger.info(f'Using Discord username: {display_name} (no server nickname set)')
+        
         c.execute('REPLACE INTO guesses (guild_id, user_id, username, guess) VALUES (?, ?, ?, ?)', 
-                  (guild_id, user_id, username, str(guess_value)))
+                  (guild_id, user_id, display_name, str(guess_value)))
         conn.commit()
-        logger.info(f'User {username} (ID: {user_id}) guessed: {guess_value} in guild {guild_id}')
+        logger.info(f'User {display_name} (ID: {user_id}) guessed: {guess_value} in guild {guild_id}')
         
         await thread.send(f"✅ Your {'guess' if is_numeric else 'answer'} of **{guess_value}** has been recorded!")
         
@@ -481,26 +490,75 @@ async def list_guesses(interaction: discord.Interaction):
     logger.info(f'Admin {interaction.user} (ID: {interaction.user.id}) requested list of guesses in guild {guild_id}')
     c.execute('SELECT username, guess FROM guesses WHERE guild_id = ?', (guild_id,))
     rows = c.fetchall()
+    
     if not rows:
         await interaction.response.send_message('No guesses have been made yet.')
         return
     
-    # Create embed for better formatting
-    embed = discord.Embed(title="All Guesses", color=discord.Color.green())
-    guess_list = '\n'.join([f'**{username}**: {guess}' for username, guess in rows])
-    
-    # Discord has a 4096 character limit for embed descriptions
-    if len(guess_list) > 4000:
-        # Split into multiple fields if too long
-        chunks = [guess_list[i:i+1024] for i in range(0, len(guess_list), 1024)]
-        for i, chunk in enumerate(chunks[:3]):  # Max 3 fields to be safe
-            embed.add_field(name=f"Guesses Part {i+1}", value=chunk, inline=False)
-        if len(chunks) > 3:
-            embed.add_field(name="Note", value="Some guesses omitted due to length", inline=False)
-    else:
+    # If there are few guesses, show them in a single embed
+    if len(rows) <= 20:
+        embed = discord.Embed(
+            title=f"All Guesses ({len(rows)} total)",
+            color=discord.Color.green()
+        )
+        guess_list = '\n'.join([f'**{username}**: {guess}' for username, guess in rows])
         embed.description = guess_list
-    
-    await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed)
+    else:
+        # For many guesses, send multiple embeds
+        await interaction.response.defer()
+        
+        # Split guesses into chunks of 20
+        chunks = [rows[i:i+20] for i in range(0, len(rows), 20)]
+        
+        for i, chunk in enumerate(chunks):
+            embed = discord.Embed(
+                title=f"All Guesses - Part {i+1}/{len(chunks)} ({len(rows)} total)",
+                color=discord.Color.green()
+            )
+            
+            # Create the guess list for this chunk
+            guess_list = '\n'.join([f'**{username}**: {guess}' for username, guess in chunk])
+            
+            # Split into fields if even this chunk is too long
+            if len(guess_list) > 4000:
+                # Split into smaller sections for fields
+                lines = [f'**{username}**: {guess}' for username, guess in chunk]
+                field_content = []
+                current_field = []
+                current_length = 0
+                
+                for line in lines:
+                    if current_length + len(line) + 1 > 1000:  # Leave room for newlines
+                        field_content.append('\n'.join(current_field))
+                        current_field = [line]
+                        current_length = len(line)
+                    else:
+                        current_field.append(line)
+                        current_length += len(line) + 1
+                
+                if current_field:
+                    field_content.append('\n'.join(current_field))
+                
+                # Add fields to embed
+                for j, content in enumerate(field_content[:25]):  # Discord limit: 25 fields
+                    field_name = f"Guesses {i*20 + j*5 + 1}-{min(i*20 + (j+1)*5, len(rows))}"
+                    embed.add_field(name=field_name, value=content, inline=False)
+            else:
+                embed.description = guess_list
+            
+            # Add navigation info to footer
+            embed.set_footer(text=f"Showing guesses {i*20 + 1}-{min((i+1)*20, len(rows))} of {len(rows)}")
+            
+            # Send the embed
+            if i == 0:
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed)
+            
+            # Add a small delay to avoid rate limiting for very large lists
+            if len(chunks) > 10 and i < len(chunks) - 1:
+                await asyncio.sleep(0.5)
 
 @bot.tree.command(name="find_closest", description="Find the closest guess to the actual answer (Admin only)")
 @discord.app_commands.describe(answer="The actual answer to compare guesses against")
